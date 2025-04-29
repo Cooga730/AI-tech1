@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>隨機分組系統</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    body { background: #f0f4f8; font-family: Arial, sans-serif; margin: 0; }
+    .main { max-width: 520px; margin: 40px auto; background: #fff; border-radius: 12px; box-shadow: 0 2px 12px #0001; padding: 28px 20px; }
+    h2 { text-align: center; color: #1976d2; }
+    .upload { margin-bottom: 18px; }
+    .group-set { margin-bottom: 18px; text-align: center; }
+    .group-set input { width: 60px; padding: 6px; border-radius: 6px; border: 1px solid #b0bec5; font-size: 15px; }
+    button { padding: 10px 18px; border: none; border-radius: 6px; background: #1976d2; color: #fff; font-size: 16px; cursor: pointer; margin-left: 8px; }
+    #result { margin-top: 18px; background: #f9fbfd; border-radius: 8px; border: 1px solid #e0e0e0; padding: 14px; }
+    .group-title { font-weight: bold; color: #388e3c; margin-top: 12px; }
+    .copy-btn { float: right; margin-top: -6px; }
+  </style>
+</head>
+<body>
+  <div class="main">
+    <h2>隨機分組系統</h2>
+    <div class="upload">
+      <input type="file" id="fileInput" accept=".xlsx,.xls" />
+    </div>
+    <div class="group-set">
+      分組數：<input type="number" id="groupCount" min="2" max="60" value="12" />
+      <button onclick="doGroup()">開始分組</button>
+    </div>
+    <div id="result"></div>
+  </div>
+  <script>
+    let names = [];
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(data, {type: 'array'});
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, {header:1});
+        // 取得標題列
+        let header = rows[0];
+        // 假設標題包含「班級」、「學號」、「姓名」
+        let classIdx = header.findIndex(h => String(h).indexOf('班級') !== -1);
+        let idIdx = header.findIndex(h => String(h).indexOf('學號') !== -1);
+        let nameIdx = header.findIndex(h => String(h).indexOf('姓名') !== -1);
+        if (classIdx === -1 || idIdx === -1 || nameIdx === -1) {
+          alert('請確認 Excel 第一列包含「班級」、「學號」、「姓名」三個欄位！');
+          names = [];
+          return;
+        }
+        names = rows.slice(1).map(r => {
+          return {
+            class: r[classIdx] || '',
+            id: r[idIdx] || '',
+            name: r[nameIdx] || ''
+          };
+        }).filter(obj => obj.name);
+        alert('名單讀取成功，共 ' + names.length + ' 人');
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    function shuffle(arr) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    function doGroup() {
+      const n = parseInt(document.getElementById('groupCount').value);
+      if (!names.length) { alert('請先上傳名單 Excel 檔！'); return; }
+      if (n < 2) {
+        alert('分組數需大於1！');
+        return;
+      }
+      if (n > names.length) {
+        alert('分組數不能大於人數（目前人數：' + names.length + '）！');
+        document.getElementById('groupCount').value = names.length;
+        return;
+      }
+      const shuffled = shuffle([...names]);
+      const groups = Array.from({length: n}, () => []);
+      shuffled.forEach((obj, i) => { groups[i % n].push(obj); });
+      let html = `<button class='copy-btn' onclick='copyResult()'>複製分組結果</button>`;
+      groups.forEach((g, i) => {
+        html += `<div class='group-title'>第${i+1}組</div><table border='1' style='border-collapse:collapse;width:100%;margin-bottom:8px;'><tr><th>班級</th><th>學號</th><th>姓名</th></tr>`;
+        g.forEach(obj => { html += `<tr><td>${obj.class}</td><td>${obj.id}</td><td>${obj.name}</td></tr>`; });
+        html += '</table>';
+      });
+      document.getElementById('result').innerHTML = html + `<button onclick='showPeerReview()' style='margin-top:10px;'>產生小組互評對象</button>`;
+      window.lastGroups = groups;
+    }
+
+    function copyResult() {
+      if (!window.lastGroups) return;
+      let txt = '';
+      window.lastGroups.forEach((g, i) => {
+        txt += `第${i+1}組\n班級\t學號\t姓名\n` + g.map(obj => `${obj.class}\t${obj.id}\t${obj.name}`).join('\n') + '\n\n';
+      });
+      navigator.clipboard.writeText(txt);
+      alert('分組結果已複製！');
+    }
+
+    function assignPeerReview(groups) {
+      // 產生一個隨機排列的數列
+      const n = groups.length;
+      let order = Array.from({length: n}, (_, i) => i);
+      // 洗牌
+      for (let i = n - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [order[i], order[j]] = [order[j], order[i]];
+      }
+      // 每組評下一組和下下組，且每組只被一組評一次
+      let reviewMap = [];
+      for (let i = 0; i < n; i++) {
+        let a = order[(i + 1) % n];
+        let b = order[(i + 2) % n];
+        reviewMap.push({
+          group: order[i] + 1,
+          review: [a + 1, b + 1]
+        });
+      }
+      // 依 group 編號排序，方便閱讀
+      reviewMap.sort((a, b) => a.group - b.group);
+      return reviewMap;
+    }
+
+    function showPeerReview() {
+      if (!window.lastGroups) {
+        alert('請先分組！');
+        return;
+      }
+      const reviewMap = assignPeerReview(window.lastGroups);
+      let html = '<h3>小組互評對象</h3>';
+      reviewMap.forEach(r => {
+        html += `第${r.group}組請評：第${r.review[0]}組、第${r.review[1]}組<br>`;
+      });
+      document.getElementById('result').innerHTML += '<div style="margin-top:18px;">' + html + '</div>';
+    }
+  </script>
+</body>
+</html>
