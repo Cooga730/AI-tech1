@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 聊天室（新版）</title>
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: linear-gradient(120deg, #e0eafc, #cfdef3); margin: 0; }
+    .chatbox { max-width: 520px; margin: 48px auto; background: #fff; border-radius: 14px; box-shadow: 0 4px 24px #0002; padding: 32px 28px 20px 28px; }
+    h1 { text-align: center; color: #1976d2; margin-bottom: 18px; }
+    #messages { height: 420px; overflow-y: auto; border: 1px solid #e3e3e3; border-radius: 8px; padding: 16px; background: #f7fafd; margin-bottom: 18px; }
+    .msg { margin: 12px 0; line-height: 1.7; }
+    .msg.user { text-align: right; }
+    .msg .bubble { display: inline-block; padding: 10px 18px; border-radius: 18px; max-width: 80%; }
+    .msg.user .bubble { background: #1976d2; color: #fff; border-bottom-right-radius: 4px; }
+    .msg.ai .bubble { background: #e3f2fd; color: #222; border-bottom-left-radius: 4px; }
+    form { display: flex; gap: 10px; }
+    input[type=text] { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #b0bec5; font-size: 17px; }
+    button { padding: 12px 22px; border: none; border-radius: 8px; background: #1976d2; color: #fff; font-size: 17px; cursor: pointer; transition: background 0.2s; }
+    button:disabled { background: #b0bec5; }
+    .apikey { margin: 0 0 18px 0; text-align: center; }
+    .apikey input { width: 70%; padding: 7px; border-radius: 6px; border: 1px solid #b0bec5; font-size: 15px; }
+  </style>
+</head>
+<body>
+  <div class="chatbox">
+    <h1>AI 聊天室（新版）</h1>
+    <div class="apikey">
+      <input type="password" id="apikey" placeholder="請輸入 Google API Key" />
+      <button onclick="saveKey()">儲存</button>
+    </div>
+    <div id="messages"></div>
+    <form id="msgForm" autocomplete="off">
+      <input type="text" id="msgInput" placeholder="輸入訊息..." required />
+      <button type="submit">送出</button>
+    </form>
+  </div>
+  <script>
+    let API_KEY = localStorage.getItem('g_api_key') || '';
+    const apikeyInput = document.getElementById('apikey');
+    apikeyInput.value = API_KEY;
+    function saveKey() {
+      API_KEY = apikeyInput.value.trim();
+      localStorage.setItem('g_api_key', API_KEY);
+      apikeyInput.type = 'password';
+      apikeyInput.blur();
+    }
+    apikeyInput.addEventListener('keydown', e => { if(e.key==='Enter') saveKey(); });
+
+    const messages = document.getElementById('messages');
+    const form = document.getElementById('msgForm');
+    const input = document.getElementById('msgInput');
+    let chatHistory = [];
+
+    function addMsg(role, text) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + role;
+      div.innerHTML = `<span class="bubble">${text.replace(/\n/g,'<br>')}</span>`;
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    async function talkToAI(msg) {
+      addMsg('user', msg);
+      input.value = '';
+      input.disabled = true;
+      form.querySelector('button').disabled = true;
+      try {
+        if (!API_KEY) throw new Error('請先輸入 API Key');
+        const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + API_KEY, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              { parts: [{ text: msg }] }
+            ],
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 1024
+            }
+          })
+        });
+        const data = await res.json();
+        if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0].text) {
+          let aiText = data.candidates[0].content.parts[0].text;
+          addMsg('ai', aiText);
+        } else if (data.error && data.error.message) {
+          addMsg('ai', '（API 錯誤：' + data.error.message + '）');
+        } else {
+          addMsg('ai', '（AI 沒有回應，請檢查 API Key 或配額）');
+        }
+      } catch (e) {
+        addMsg('ai', '（錯誤：' + (e.message || '請檢查 API Key 或網路') + '）');
+      } finally {
+        input.disabled = false;
+        form.querySelector('button').disabled = false;
+        input.focus();
+      }
+    }
+
+    form.onsubmit = e => {
+      e.preventDefault();
+      const msg = input.value.trim();
+      if (msg) talkToAI(msg);
+    };
+  </script>
+</body>
+</html>
