@@ -103,6 +103,12 @@
       const msg = input.value.trim();
       if (msg) talkToAI(msg);
     };
+
+    window.onload = function() {
+      input.focus();
+      // 若有 API_KEY，則自動聚焦訊息輸入框
+      if (!API_KEY) apikeyInput.focus();
+    };
   </script>
 </body>
 </html>
